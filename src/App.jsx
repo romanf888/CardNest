@@ -34,7 +34,9 @@ function getInitialRoute() {
   const path = window.location.pathname.toLowerCase();
   const hash = window.location.hash.toLowerCase();
   const search = window.location.search.toLowerCase();
-  if (path.includes('/admin') || hash.includes('admin') || search.includes('admin')) {
+  
+  // Detect admin in path, hash (#admin or #/admin), or query (?admin)
+  if (path.endsWith('/admin') || path.endsWith('/admin/') || hash.includes('admin') || search.includes('admin')) {
     return 'admin';
   }
   return 'public';
@@ -59,14 +61,26 @@ export default function App() {
   // Reveal modal state
   const [revealData, setRevealData] = useState(null);
 
-  // Synchronize browser history / URL with route
+  // Synchronize browser history / URL with route (works on GitHub Pages & subpaths)
   const navigateTo = (targetRoute) => {
     setRoute(targetRoute);
     if (typeof window !== 'undefined') {
+      const isSubpath = window.location.pathname.length > 1 && !window.location.pathname.endsWith('/admin');
+      const basePath = isSubpath ? window.location.pathname.replace(/\/admin\/?$/, '') : '';
+
       if (targetRoute === 'admin') {
-        window.history.pushState({ route: 'admin' }, '', '/admin');
+        // Use hash #admin on GitHub Pages / subpaths to avoid 404 on reload, and /admin on root domains
+        if (window.location.pathname.includes('/CardNest') || window.location.hostname.includes('github.io')) {
+          window.location.hash = 'admin';
+        } else {
+          window.history.pushState({ route: 'admin' }, '', '/admin');
+        }
       } else {
-        window.history.pushState({ route: 'public' }, '', '/');
+        if (window.location.hash.includes('admin')) {
+          window.location.hash = '';
+        } else {
+          window.history.pushState({ route: 'public' }, '', basePath || '/');
+        }
       }
     }
   };
