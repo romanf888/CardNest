@@ -107,20 +107,6 @@ export const Navbar = ({
               )}
             </button>
 
-            {/* Admin Portal Tab ONLY shown when in active admin session / authorized creator */}
-            {isUserAdmin && activeTab === 'admin' && (
-              <>
-                <div className="h-4 w-px bg-slate-800 mx-1" />
-                <button
-                  onClick={() => onTabChange('admin')}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25"
-                >
-                  <ShieldAlert className="w-3.5 h-3.5 text-purple-300" />
-                  <span>Panel Admin</span>
-                </button>
-              </>
-            )}
-
           </nav>
 
           {/* Right Action Icons & Google Account Integration */}

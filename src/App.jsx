@@ -5,14 +5,14 @@ import {
   getStoredCodes, 
   saveStoredCodes, 
   getStoredCollection, 
-  getRedemptionHistory,
+  getRedemptionHistory, 
   saveStoredCollection, 
-  subscribeToLiveEvents,
-  redeemDropCode,
-  resetToDefaults,
-  isAdminSessionActive,
-  setAdminSessionActive,
-  mergeCollections
+  subscribeToLiveEvents, 
+  redeemDropCode, 
+  resetToDefaults, 
+  isAdminSessionActive, 
+  setAdminSessionActive, 
+  mergeCollections 
 } from './utils/storage';
 import { 
   auth, 
@@ -24,26 +24,65 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { Navbar } from './components/Navbar';
 import { CodeRedeemSection } from './components/CodeRedeemSection';
 import { CardBinder } from './components/CardBinder';
-import { AdminPanel } from './components/AdminPanel';
+import { AdminPage } from './components/AdminPage';
 import { CardRevealModal } from './components/CardRevealModal';
-import { AdminGateModal } from './components/AdminGateModal';
 import { playSuccessChime } from './utils/audio';
-import { Lock, Sparkles, Shield, Cloud } from 'lucide-react';
+import { Lock, Sparkles, Shield, Cloud, ArrowRight } from 'lucide-react';
+
+function getInitialRoute() {
+  if (typeof window === 'undefined') return 'public';
+  const path = window.location.pathname.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+  const search = window.location.search.toLowerCase();
+  if (path.includes('/admin') || hash.includes('admin') || search.includes('admin')) {
+    return 'admin';
+  }
+  return 'public';
+}
 
 export default function App() {
   const [cards, setCards] = useState(() => getStoredCards());
   const [codes, setCodes] = useState(() => getStoredCodes());
   const [collection, setCollection] = useState(() => getStoredCollection());
   const [history, setHistory] = useState(() => getRedemptionHistory());
-  const [activeTab, setActiveTab] = useState('redeem'); // 'redeem' | 'binder' | 'admin'
   
-  // User Auth & Session
+  // High-Level Route: 'public' | 'admin'
+  const [route, setRoute] = useState(() => getInitialRoute());
+  
+  // Public sub-tabs: 'redeem' | 'binder'
+  const [publicTab, setPublicTab] = useState('redeem');
+
+  // User Auth & Admin Session
   const [currentUser, setCurrentUser] = useState(null);
   const [isAdminSession, setIsAdminSession] = useState(() => isAdminSessionActive());
-  const [isAdminGateOpen, setIsAdminGateOpen] = useState(false);
 
   // Reveal modal state
   const [revealData, setRevealData] = useState(null);
+
+  // Synchronize browser history / URL with route
+  const navigateTo = (targetRoute) => {
+    setRoute(targetRoute);
+    if (typeof window !== 'undefined') {
+      if (targetRoute === 'admin') {
+        window.history.pushState({ route: 'admin' }, '', '/admin');
+      } else {
+        window.history.pushState({ route: 'public' }, '', '/');
+      }
+    }
+  };
+
+  // Listen to browser Back/Forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      setRoute(getInitialRoute());
+    };
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
+  }, []);
 
   // 1. Firebase Auth listener
   useEffect(() => {
@@ -89,19 +128,10 @@ export default function App() {
       setIsAdminSession(isAdminSessionActive());
     });
 
-    // Check URL parameters for direct drop code (e.g. ?code=BIENVENUE) or admin route (?admin)
+    // Check URL parameters for direct drop code (e.g. ?code=BIENVENUE)
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const urlCode = params.get('code');
-      const isAdminRoute = params.has('admin');
-
-      if (isAdminRoute) {
-        if (isAdminSessionActive()) {
-          setActiveTab('admin');
-        } else {
-          setIsAdminGateOpen(true);
-        }
-      }
 
       if (urlCode) {
         setTimeout(() => {
@@ -125,8 +155,15 @@ export default function App() {
     return () => unsubscribe();
   }, [currentUser]);
 
+  // Card Management Actions (Add, Update, Delete)
   const handleAddCard = (newCard) => {
     const updated = [newCard, ...cards];
+    setCards(updated);
+    saveStoredCards(updated);
+  };
+
+  const handleUpdateCard = (updatedCard) => {
+    const updated = cards.map(c => c.id === updatedCard.id ? updatedCard : c);
     setCards(updated);
     saveStoredCards(updated);
   };
@@ -137,6 +174,7 @@ export default function App() {
     saveStoredCards(updated);
   };
 
+  // Code Management Actions
   const handleAddCode = (newCode) => {
     const updated = [newCode, ...codes];
     setCodes(updated);
@@ -185,24 +223,29 @@ export default function App() {
     setHistory(getRedemptionHistory());
   };
 
-  const handleTabChange = (targetTab) => {
-    if (targetTab === 'admin') {
-      const isAuthorized = isAdminSession || (currentUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase());
-      if (isAuthorized) {
-        setActiveTab('admin');
-      } else {
-        setIsAdminGateOpen(true);
-      }
-    } else {
-      setActiveTab(targetTab);
-    }
-  };
+  // ================= ROUTE 1: DEDICATED SEPARATE ADMIN PAGE (/admin) =================
+  if (route === 'admin') {
+    return (
+      <AdminPage
+        cards={cards}
+        codes={codes}
+        history={history}
+        onAddCard={handleAddCard}
+        onUpdateCard={handleUpdateCard}
+        onDeleteCard={handleDeleteCard}
+        onAddCode={handleAddCode}
+        onToggleCodeActive={handleToggleCodeActive}
+        onDeleteCode={handleDeleteCode}
+        onResetData={handleResetData}
+        onNavigateHome={() => navigateTo('public')}
+        currentUser={currentUser}
+        isAdminSession={isAdminSession}
+        setIsAdminSession={setIsAdminSession}
+      />
+    );
+  }
 
-  const handleAdminGateSuccess = () => {
-    setIsAdminSession(true);
-    setActiveTab('admin');
-  };
-
+  // ================= ROUTE 2: PUBLIC VIEWER SITE (/) =================
   return (
     <div className="min-h-screen bg-[#07090E] text-slate-100 flex flex-col justify-between selection:bg-amber-400 selection:text-slate-950 font-['Outfit',sans-serif]">
       
@@ -212,56 +255,47 @@ export default function App() {
         <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-indigo-500/5 rounded-full blur-[140px]" />
       </div>
 
-      {/* Top Navigation */}
+      {/* Top Navigation (Pure Viewer Focus) */}
       <Navbar
-        activeTab={activeTab}
-        onTabChange={handleTabChange}
+        activeTab={publicTab}
+        onTabChange={(tab) => {
+          if (tab === 'admin') {
+            navigateTo('admin');
+          } else {
+            setPublicTab(tab);
+          }
+        }}
         collectedCount={collection.length}
         currentUser={currentUser}
         isAdminSession={isAdminSession}
-        onOpenAdminGate={() => setIsAdminGateOpen(true)}
+        onOpenAdminGate={() => navigateTo('admin')}
       />
 
       {/* Main Container */}
       <main className="relative z-10 flex-1 max-w-6xl w-full mx-auto px-4 py-8 flex flex-col justify-center">
         
-        {/* VIEW 1: REDEEM CODE (USER SIDE) */}
-        {activeTab === 'redeem' && (
+        {/* PUBLIC VIEW 1: REDEEM CODE */}
+        {publicTab === 'redeem' && (
           <CodeRedeemSection
             activeCodes={codes.filter(c => c.isActive)}
             onCardRedeemed={handleCardRedeemed}
-            onOpenBinder={() => setActiveTab('binder')}
+            onOpenBinder={() => setPublicTab('binder')}
             collectedCount={collection.length}
             currentUserId={currentUser?.uid}
             userDisplayName={currentUser?.displayName || currentUser?.email}
           />
         )}
 
-        {/* VIEW 2: USER BINDER (USER SIDE) */}
-        {activeTab === 'binder' && (
+        {/* PUBLIC VIEW 2: USER BINDER */}
+        {publicTab === 'binder' && (
           <CardBinder
             allCards={cards}
             collection={collection}
-            onSelectCodeMode={() => setActiveTab('redeem')}
+            onSelectCodeMode={() => setPublicTab('redeem')}
             currentUser={currentUser}
           />
         )}
 
-        {/* VIEW 3: ADMIN PANEL (CREATOR / STREAMER SIDE) */}
-        {activeTab === 'admin' && (
-          <AdminPanel
-            cards={cards}
-            codes={codes}
-            history={history}
-            onAddCard={handleAddCard}
-            onDeleteCard={handleDeleteCard}
-            onAddCode={handleAddCode}
-            onToggleCodeActive={handleToggleCodeActive}
-            onDeleteCode={handleDeleteCode}
-            onResetData={handleResetData}
-            onExitAdmin={() => setActiveTab('redeem')}
-          />
-        )}
       </main>
 
       {/* Card Reveal 3D Opening Modal */}
@@ -273,20 +307,12 @@ export default function App() {
           onClose={() => setRevealData(null)}
           onOpenBinder={() => {
             setRevealData(null);
-            setActiveTab('binder');
+            setPublicTab('binder');
           }}
         />
       )}
 
-      {/* Secret Admin Gate Lock Modal */}
-      <AdminGateModal
-        isOpen={isAdminGateOpen}
-        onClose={() => setIsAdminGateOpen(false)}
-        onSuccess={handleAdminGateSuccess}
-        currentUser={currentUser}
-      />
-
-      {/* Footer */}
+      {/* Public Footer */}
       <footer className="relative z-10 w-full border-t border-slate-900/90 bg-[#070A10]/90 py-6 text-center text-xs text-slate-500 backdrop-blur-md">
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
@@ -294,37 +320,37 @@ export default function App() {
             <span>• Collection exclusive pour le stream</span>
           </div>
 
-          <div className="flex items-center gap-4 text-slate-400">
+          <nav className="flex items-center gap-4 text-slate-400">
             <button
-              onClick={() => setActiveTab('redeem')}
-              className={`hover:text-amber-400 transition ${activeTab === 'redeem' ? 'text-amber-400 font-bold' : ''}`}
+              type="button"
+              onClick={() => setPublicTab('redeem')}
+              className={`hover:text-amber-400 transition cursor-pointer ${publicTab === 'redeem' ? 'text-amber-400 font-bold' : ''}`}
             >
               Entrer un code
             </button>
             <span>•</span>
             <button
-              onClick={() => setActiveTab('binder')}
-              className={`hover:text-amber-400 transition ${activeTab === 'binder' ? 'text-amber-400 font-bold' : ''}`}
+              type="button"
+              onClick={() => setPublicTab('binder')}
+              className={`hover:text-amber-400 transition cursor-pointer ${publicTab === 'binder' ? 'text-amber-400 font-bold' : ''}`}
             >
               Mon Classeur ({collection.length})
             </button>
             <span>•</span>
-            {/* Discrete Streamer Access */}
-            <button
-              onClick={() => {
-                if (isAdminSession || currentUser?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-                  setActiveTab('admin');
-                } else {
-                  setIsAdminGateOpen(true);
-                }
+            {/* Direct Separate Link to /admin */}
+            <a
+              href="/admin"
+              onClick={(e) => {
+                e.preventDefault();
+                navigateTo('admin');
               }}
-              className="text-slate-500 hover:text-purple-400 transition flex items-center gap-1.5"
-              title="Accès réservé au créateur / streamer"
+              className="text-slate-500 hover:text-purple-400 transition flex items-center gap-1.5 font-medium cursor-pointer"
+              title="Accéder au panel d'administration séparé (/admin)"
             >
               <Lock className="w-3 h-3" />
-              <span>Régie Streamer</span>
-            </button>
-          </div>
+              <span>Accès Régie (/admin)</span>
+            </a>
+          </nav>
         </div>
       </footer>
 
